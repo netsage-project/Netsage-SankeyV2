@@ -20,10 +20,17 @@ limitations under the License.
 */
 
 
-import {MetricsPanelCtrl} from 'app/plugins/sdk';
+import {
+  MetricsPanelCtrl
+} from 'app/plugins/sdk';
 import _ from 'lodash';
-import {Scale} from './scale';
-import {CustomHover} from './CustomHover';
+import kbn from 'app/core/utils/kbn';
+import {
+  Scale
+} from './scale';
+import {
+  CustomHover
+} from './CustomHover';
 import './css/sankeynetsage_sankey.css!';
 import d3 from './js/sankeynetsage_d3.v3';
 import d3sankey from './js/sankeynetsage_sankey.js';
@@ -31,42 +38,68 @@ d3.sankey = d3sankey;
 
 ////// place global variables here ////
 const panelDefaults = {
-    link_width_input: '',
-    aggregation_options: [ 'Total', 'Average', 'Max', 'Min' ],
-    aggregation: 'Total',
-    choices: [],
-    option_nodes: [],
-    aggregated_data: [],
-    max_total: 0,
-    to_Byte: false,
-    color: {
-        mode: 'spectrum',
-        cardColor: '#b4ff00',
-        colorScale: 'linear',
-        exponent: 0.5,
-        colorScheme: 'interpolateOranges',
-        fillBackground: false
-    },
-    legend: {
-        show: true,    
-        legend_colors: []
-    },
-    tooltip:{
-        show: true,
-        showDefault: true,
-        content: ' '
-    },
-    to_si: 1000000000,
-    scales: ['linear', 'sqrt'],
-    colorScheme : 'NetSage',
-    rgb_values:[],
-    hex_values:[],
-    //colorModes : ['opacity','spectrum'],
-    colorModes : ['spectrum'],
-    custom_hover: ' '
+  //docs_editor variables
+  docs_editor_aggregation_options: ['Total', 'Average', 'Max', 'Min'],
+  docs_editor_aggregation: 'Total',
+  docs_editor_link_width_input: '',
+  docs_editor_to_Byte: false,
+  docs_editor_choices: [],
+  docs_editor_option_nodes: [],
+  docs_data: [],
+  // table_editor variables
+  table_editor_link_width_label: '',
+  table_editor_link_width_units: '',
+  table_editor_choices: [],
+  table_editor_node_labels: [],
+  table_editor_option_nodes: [], // used to store data mapping
+  table_editor_unitFormats_TEMP: [{
+    text: "kbn.getUnitFormats()",
+    submenu: [{
+        text: 'Not implemented yet',
+        value: 'kbn.getUnitFormats()'
+      },
+      {
+        text: 'test unit',
+        value: 'short'
+      }
+    ]
+  }],
+  table_editor_unitFormats: '',
+  table_data_type: '',
+  table_data: [],
+  // other variables
+  auto_format_labels: false,
+  label_nodes: [],
+  data_type: "",
+  table_editor_kbnUnitFormats: kbn.getUnitFormats(),
+  // other unused variables
+  color: {
+    mode: 'spectrum',
+    cardColor: '#b4ff00',
+    colorScale: 'linear',
+    exponent: 0.5,
+    colorScheme: 'interpolateOranges',
+    fillBackground: false
+  },
+  legend: {
+    show: true,
+    legend_colors: []
+  },
+  tooltip: {
+    show: true,
+    showDefault: true,
+    content: ' '
+  },
+  scales: ['linear', 'sqrt'],
+  colorScheme: 'NetSage',
+  rgb_values: [],
+  hex_values: [],
+  //colorModes : ['opacity','spectrum'],
+  colorModes: ['spectrum'],
+  custom_hover: ' '
 };
 
-var tempArray=[];
+var tempArray = [];
 
 
 export class NetSageSankey extends MetricsPanelCtrl {
@@ -75,92 +108,123 @@ export class NetSageSankey extends MetricsPanelCtrl {
 
   constructor($scope, $injector) {
     super($scope, $injector);
-    
+
     _.defaults(this.panel, panelDefaults);
-      this.sankeynetsage_holder_id = 'sankeynetsage_' + this.panel.id;
-      this.containerDivId = 'container_'+this.sankeynetsage_holder_id;
-      this.custom_hover = new CustomHover(this.panel.tooltip.content);
-      this.scale = new Scale(this.colorScheme);
-      this.colorSchemes=this.scale.getColorSchemes();
-      this.events.on('data-received', this.onDataReceived.bind(this));
-      this.events.on('data-error', this.onDataError.bind(this));
-      this.events.on('data-snapshot-load', this.onDataReceived.bind(this));
-      this.events.on('init-edit-mode', this.onInitEditMode.bind(this));
-      this.events.on('init-panel-actions', this.onInitPanelActions.bind(this));
+    this.sankeynetsage_holder_id = 'sankeynetsage_' + this.panel.id;
+    this.containerDivId = 'container_' + this.sankeynetsage_holder_id;
+    this.custom_hover = new CustomHover(this.panel.tooltip.content);
+    this.scale = new Scale(this.colorScheme);
+    this.colorSchemes = this.scale.getColorSchemes();
+    this.events.on('data-received', this.onDataReceived.bind(this));
+    this.events.on('data-error', this.onDataError.bind(this));
+    this.events.on('data-snapshot-load', this.onDataReceived.bind(this));
+    this.events.on('init-edit-mode', this.onInitEditMode.bind(this));
+    this.events.on('init-panel-actions', this.onInitPanelActions.bind(this));
   }
 
 
 
-  onDataReceived(dataList) { 
-    this.panel.aggregated_data = [];
-    this.panel.max_total = 0;
+  onDataReceived(dataList) {
+    this.panel.docs_data = [];
+    this.panel.docs_table_data = [];
+    this.panel.label_nodes = [];
+    this.panel.data_type = "";
     this.process_data(dataList);
     this.render();
   }
-    
 
 
-  process_data(dataList){
-    /////////////////////////////////// IMPORTANT NOTE //////////////////////////////////////
-    //    datalist == results
-    //    each results have (target, datapoints[])
-    //    datapoints[0] == dataValue, datapoints[1] == epoch time dataValue was measured at
-    //
-    //    multiple queries get returned as one result.
-    /////////////////////////////////// IMPORTANT NOTE //////////////////////////////////////
-   
+  // process "table" or "docs" data types
+  // "table" == aggregated data
+  // "docs" == full record
+  process_data(dataList) {
 
-    ///////// your data processing code here /////////////
-    function matchingFlow(elk_datapoint, agData){
-      return ( elk_datapoint.meta.src_ip === agData.meta.src_ip && 
-               elk_datapoint.meta.src_asn === agData.meta.src_asn && 
-               elk_datapoint.meta.src_port === agData.meta.src_port && 
-               elk_datapoint.meta.protocol === agData.meta.protocol && 
-               elk_datapoint.meta.dst_port === agData.meta.dst_port && 
-               elk_datapoint.meta.dst_asn === agData.meta.dst_asn &&
-               elk_datapoint.meta.dst_ip === agData.meta.dst_ip )
+    if (dataList.length > 0) {
+      // set current data type
+      this.panel.data_type = dataList[0].type;
+
+      // check if data type is full record
+      if (this.panel.data_type === "docs") {
+        this.panel.label_nodes = this.panel.docs_editor_option_nodes.slice(0);
+        this.process_docs_data(dataList);
+      } else if (this.panel.data_type === "table") {
+        this.panel.label_nodes = this.panel.table_editor_node_labels.slice(0);
+        this.process_table_data(dataList);
+      } else {
+        console.error("[!] Sankey plugin Error:  Unknown data type '", this.panel.data_type, "' cannot process data");
+      }
+    } else {
+      console.error("[!] Sankey plugin Error: No data to visualize");
     }
 
+  }
+
+
+
+  process_table_data(dataList) {
+    this.panel.table_editor_option_nodes = [];
+    this.panel.table_data_type = dataList[0].columns[dataList[0].columns.length - 1].text;
+    var self = this;
+    for (var i = 0; i < dataList[0].columns.length - 1; i++) {
+      self.panel.table_editor_option_nodes.push(dataList[0].columns[i].text);
+    }
+    this.panel.table_data = dataList[0].rows.slice(0);
+  }
+
+
+
+  process_docs_data(dataList) {
+    function matchingFlow(elk_datapoint, agData) {
+      return (elk_datapoint.meta.src_ip === agData.meta.src_ip &&
+        elk_datapoint.meta.src_asn === agData.meta.src_asn &&
+        elk_datapoint.meta.src_port === agData.meta.src_port &&
+        elk_datapoint.meta.protocol === agData.meta.protocol &&
+        elk_datapoint.meta.dst_port === agData.meta.dst_port &&
+        elk_datapoint.meta.dst_asn === agData.meta.dst_asn &&
+        elk_datapoint.meta.dst_ip === agData.meta.dst_ip)
+    }
+
+    // process full records here
     var self = this;
     //update with the data!
-    _.forEach(dataList, function(data){
-      for (var i = 0; i < data.datapoints.length; i++){
+    _.forEach(dataList, function (data) {
+      for (var i = 0; i < data.datapoints.length; i++) {
         var elk_datapoint = data.datapoints[i];
 
         var flowNotExists = true;
-        if(self.panel.aggregated_data.length > 0 ){
-          _.forEach(self.panel.aggregated_data, function(agData){
-            if( matchingFlow(elk_datapoint, agData) ){
+        if (self.panel.docs_data.length > 0) {
+          _.forEach(self.panel.docs_data, function (agData) {
+            if (matchingFlow(elk_datapoint, agData)) {
               flowNotExists = false;
               //count total flows
               agData.sankey_totalFlows++;
               //aggregate data
-              switch(self.panel.aggregation) {
+              switch (self.panel.aggregation) {
                 case 'Average':
-                  for( var k in agData.values ){
+                  for (var k in agData.values) {
                     agData.values[k] += elk_datapoint.values[k];
                   }
                   break;
-                case  'Total':
-                  for( var k in agData.values ){
+                case 'Total':
+                  for (var k in agData.values) {
                     agData.values[k] += elk_datapoint.values[k];
                   }
                   break;
-                case  'Max':
-                  for( var k in agData.values ){
-                    if(agData.values[k] != elk_datapoint.values[k])
+                case 'Max':
+                  for (var k in agData.values) {
+                    if (agData.values[k] != elk_datapoint.values[k])
                       console.log(agData._id)
                     agData.values[k] = Math.max(agData.values[k], elk_datapoint.values[k]);
                   }
                   break;
                 case 'Min':
-                  for( var k in agData.values ){
+                  for (var k in agData.values) {
                     agData.values[k] = Math.min(agData.values[k], elk_datapoint.values[k]);
                   }
                   break;
                 default:
                   elk_datapoint.sankey_totalFlows++;
-                  for( var k in agData.values ){
+                  for (var k in agData.values) {
                     agData.values[k] += elk_datapoint.values[k];
                   }
               }
@@ -168,21 +232,21 @@ export class NetSageSankey extends MetricsPanelCtrl {
           });
         }
         // add flow if it doesnt exists in aggregated data
-        if(flowNotExists){
+        if (flowNotExists) {
           elk_datapoint.sankey_totalFlows = 1
-          self.panel.aggregated_data.push(elk_datapoint);
+          self.panel.docs_data.push(elk_datapoint);
         }
       }
 
     });
-    ///////// your data processing code here /////////////
-    //calculate averages
-    if(self.panel.aggregated_data.length > 0 ){
-      _.forEach(self.panel.aggregated_data, function(agData){
-        switch(self.panel.aggregation) {
+
+    // calculate averages for doc type
+    if (self.panel.docs_data.length > 0) {
+      _.forEach(self.panel.docs_data, function (agData) {
+        switch (self.panel.aggregation) {
           case 'Average':
-            for( var k in agData.values ){
-              agData.values[k] = agData.values[k]/agData.sankey_totalFlows;
+            for (var k in agData.values) {
+              agData.values[k] = agData.values[k] / agData.sankey_totalFlows;
             }
             break;
           default:
@@ -190,12 +254,10 @@ export class NetSageSankey extends MetricsPanelCtrl {
         }
       });
     }
-    //calculate averages
-
   }
 
 
-    
+
   onDataError(err) {
     this.dataRaw = [];
   }
@@ -203,71 +265,96 @@ export class NetSageSankey extends MetricsPanelCtrl {
 
 
   onInitEditMode() {
-    this.addEditorTab('Options', 'public/plugins/netsage-sankey/editor.html', 2);
+    this.addEditorTab('Raw Documents Options', 'public/plugins/netsage-sankey/docs_editor.html', 2);
+    this.addEditorTab('Aggregated Data Options', 'public/plugins/netsage-sankey/table_editor.html', 2);
     //this.addEditorTab('Display', 'public/plugins/netsage-sankey/display_editor.html', 3);
-    tempArray=this.scale.displayColor(this.panel.colorScheme);
+    tempArray = this.scale.displayColor(this.panel.colorScheme);
     this.render();
-  }  
+  }
 
   onInitPanelActions(actions) {
     this.render();
   }
-   
 
-  addNewChoice() {
-    var num = this.panel.choices.length + 1;
-    this.panel.choices.push(num);
-    this.panel.option_nodes.push('');
+
+  docs_editor_addNewChoice() {
+    var num = this.panel.docs_editor_choices.length + 1;
+    this.panel.docs_editor_choices.push(num);
+    this.panel.docs_editor_option_nodes.push('');
   }
 
 
-  removeChoice(index) {
-    this.panel.choices.splice(index,1);
-    this.panel.option_nodes.splice(index,1);
+  docs_editor_removeChoice(index) {
+    this.panel.docs_editor_choices.splice(index, 1);
+    this.panel.docs_editor_option_nodes.splice(index, 1);
+    if (this.panel.docs_editor_choices.length < 1)
+      this.panel.docs_editor_option_nodes = [];
+  }
+
+
+  table_editor_addNewChoice() {
+    var num = this.panel.table_editor_choices.length + 1;
+    this.panel.table_editor_choices.push(num);
+    this.panel.table_editor_node_labels.push('');
+  }
+
+
+  table_editor_removeChoice(index) {
+    this.panel.table_editor_choices.splice(index, 1);
+    this.panel.table_editor_node_labels.splice(index, 1);
+    if (this.panel.table_editor_choices.length < 1)
+      this.panel.table_editor_node_labels = [];
   }
 
 
   display() {
-    this.panel.colors=this.scale.displayColor(this.panel.colorScheme);
+    this.panel.colors = this.scale.displayColor(this.panel.colorScheme);
     this.panel.rgb_values = this.panel.colors.rgb_values;
     this.panel.hex_values = this.panel.colors.hex_values;
   }
 
 
-  getHtml(htmlContent){
+  getHtml(htmlContent) {
     return this.custom_hover.parseHtml(htmlContent);
     ///use in link///
     //             let html_content = ctrl.getHtml(ctrl.panel.tooltip.content);
     //             ctrl.panel.tooltip.content = html_content;
   }
 
+
+  setUnitFormat(subItem) {
+    this.panel.table_editor_unitFormats = subItem.value;
+    this.render();
+  }
+
+
   formatBytes(val) {
     var hrFormat = null;
     var factor = 1024.0
-    val = val/8.0;
-    
-    var b = val;
-    var k = val/factor;
-    var m = ((val/factor)/factor);
-    var g = (((val/factor)/factor)/factor);
-    var t = ((((val/factor)/factor)/factor)/factor);
-    var p = (((((val/factor)/factor)/factor)/factor)/factor);
+    val = val / 8.0;
 
-    if ( p>1 ) {
-        hrFormat = p.toFixed(2)+"(PB)";
-    } else if ( t>1 ) {
-        hrFormat = t.toFixed(2)+"(TB)";
-    } else if ( g>1 ) {
-        hrFormat = g.toFixed(2)+"(GB)";
-    } else if ( m>1 ) {
-        hrFormat = m.toFixed(2)+"(MB)";
-    } else if ( k>1 ) {
-        hrFormat = k.toFixed(2)+"(KB)";
+    var b = val;
+    var k = val / factor;
+    var m = ((val / factor) / factor);
+    var g = (((val / factor) / factor) / factor);
+    var t = ((((val / factor) / factor) / factor) / factor);
+    var p = (((((val / factor) / factor) / factor) / factor) / factor);
+
+    if (p > 1) {
+      hrFormat = p.toFixed(2) + "(PB)";
+    } else if (t > 1) {
+      hrFormat = t.toFixed(2) + "(TB)";
+    } else if (g > 1) {
+      hrFormat = g.toFixed(2) + "(GB)";
+    } else if (m > 1) {
+      hrFormat = m.toFixed(2) + "(MB)";
+    } else if (k > 1) {
+      hrFormat = k.toFixed(2) + "(KB)";
     } else {
-        hrFormat = b.toFixed(2)+"(Bytes)";
+      hrFormat = b.toFixed(2) + "(Bytes)";
     }
 
-      return hrFormat
+    return hrFormat
   }
 
   formatBits(val) {
@@ -275,146 +362,171 @@ export class NetSageSankey extends MetricsPanelCtrl {
     var factor = 1024.0
 
     var b = val;
-    var k = val/factor;
-    var m = ((val/factor)/factor);
-    var g = (((val/factor)/factor)/factor);
-    var t = ((((val/factor)/factor)/factor)/factor);
-    var p = (((((val/factor)/factor)/factor)/factor)/factor);
+    var k = val / factor;
+    var m = ((val / factor) / factor);
+    var g = (((val / factor) / factor) / factor);
+    var t = ((((val / factor) / factor) / factor) / factor);
+    var p = (((((val / factor) / factor) / factor) / factor) / factor);
 
-    if ( p>1 ) {
-        hrFormat = p.toFixed(2)+"(Pb)";
-    } else if ( t>1 ) {
-        hrFormat = t.toFixed(2)+"(Tb)";
-    } else if ( g>1 ) {
-        hrFormat = g.toFixed(2)+"(Gb)";
-    } else if ( m>1 ) {
-        hrFormat = m.toFixed(2)+"(Mb)";
-    } else if ( k>1 ) {
-        hrFormat = k.toFixed(2)+"(Kb)";
+    if (p > 1) {
+      hrFormat = p.toFixed(2) + "(Pb)";
+    } else if (t > 1) {
+      hrFormat = t.toFixed(2) + "(Tb)";
+    } else if (g > 1) {
+      hrFormat = g.toFixed(2) + "(Gb)";
+    } else if (m > 1) {
+      hrFormat = m.toFixed(2) + "(Mb)";
+    } else if (k > 1) {
+      hrFormat = k.toFixed(2) + "(Kb)";
     } else {
-        hrFormat = b.toFixed(2)+"(bits)";
+      hrFormat = b.toFixed(2) + "(bits)";
     }
 
-      return hrFormat
+    return hrFormat
   }
 
 
 
-  link(scope, elem, attrs, ctrl){
+  link(scope, elem, attrs, ctrl) {
     var self = this;
-    ctrl.events.on('render', function() {
-      if(document.getElementById(ctrl.sankeynetsage_holder_id)){
+    ctrl.events.on('render', function () {
+      if (document.getElementById(ctrl.sankeynetsage_holder_id)) {
         // intialize colors
         ctrl.display();
 
-        /////////////////  YOUR CODE HERE //////////////
-
-        /* !!!FIXME!!! ---THIS IS NOT INPUT SAFE AT ALL--- !!!FIXME!!! */
-        function getValueFromString(flowRecord, keyString){
-          return eval('flowRecord["'+(keyString.trim().split('.').join('"]["'))+'"]');
+        function getValueFromString(flowRecord, keyString) {
+          return eval('flowRecord["' + (keyString.trim().split('.').join('"]["')) + '"]');
         }
 
         var sankeyData = [];
-        if( ctrl.panel.aggregated_data.length > 0 ){
-          _.forEach(ctrl.panel.aggregated_data, function(agData,index){
-            for(var i=0; i<ctrl.panel.option_nodes.length-1; i++){
-              //get links info
-              let source = getValueFromString(agData,ctrl.panel.option_nodes[i]);
-              let target = getValueFromString(agData,ctrl.panel.option_nodes[i+1]);
-              let value = getValueFromString(agData,ctrl.panel.link_width_input);
 
-              // to avoid cyclic sankey, appending (src) and (dst) to names
-              let source_option=ctrl.panel.option_nodes[i];
-              let target_option=ctrl.panel.option_nodes[i+1];
-              source += ((source_option.includes("src_") || source_option.includes("dst_")) ?
-                           (source_option.includes("src_") ? " (src)" : " (dst)") :
-                         "");
-              target += ((target_option.includes("src_") || target_option.includes("dst_")) ?
-                           (target_option.includes("src_") ? " (src)" : " (dst)") : 
-                         "");
+        if (ctrl.panel.data_type === 'docs') {
+          // update node labels
+          // convert docs data to sankey data
+          if (ctrl.panel.docs_data.length > 0) {
+            _.forEach(ctrl.panel.docs_data, function (agData, index) {
+              for (var i = 0; i < ctrl.panel.docs_editor_option_nodes.length - 1; i++) {
+                //get links info
+                let source = getValueFromString(agData, ctrl.panel.docs_editor_option_nodes[i]);
+                let target = getValueFromString(agData, ctrl.panel.docs_editor_option_nodes[i + 1]);
+                let value = getValueFromString(agData, ctrl.panel.docs_editor_link_width_input);
 
-              // add to sankeyData array
-              sankeyData.push({"source":source,
-                               "target":target,
-                                "value":value,
-                                "label":"flow-"+index});
-            }
-          });
+                // to avoid cyclic sankey, appending (src) and (dst) to names
+                let source_option = ctrl.panel.docs_editor_option_nodes[i];
+                let target_option = ctrl.panel.docs_editor_option_nodes[i + 1];
+                source += ((source_option.includes("src") || source_option.includes("dst")) ?
+                  (source_option.includes("src") ? " (src)" : " (dst)") :
+                  "");
+                target += ((target_option.includes("src") || target_option.includes("dst")) ?
+                  (target_option.includes("src") ? " (src)" : " (dst)") :
+                  "");
+
+                // add to sankeyData array
+                sankeyData.push({
+                  "source": source,
+                  "target": target,
+                  "value": value,
+                  //"label":"flow-"+index});
+                  "label": ctrl.sankeynetsage_holder_id + "_flow-" + index
+                });
+              }
+            });
+          }
+        } else if (ctrl.panel.data_type === 'table') {
+          // update node labels
+          if (ctrl.panel.table_editor_node_labels.length > 0) {
+            ctrl.panel.label_nodes = ctrl.panel.table_editor_node_labels.slice(0);
+          } else {
+            ctrl.panel.label_nodes = ctrl.panel.table_editor_option_nodes.slice(0);
+          }
+          // convert table data to sankey data
+          if (ctrl.panel.table_data.length > 0) {
+            _.forEach(ctrl.panel.table_data, function (tData, index) {
+              for (var i = 0; i < tData.length - 2; i++) { // last index is value, so -2 to prevent using value as a node
+                //get links info
+                let source = tData[i];
+                let target = tData[i + 1];
+                let value = tData[tData.length - 1];
+
+                // to avoid cyclic sankey, appending (src) and (dst) to names
+                let source_option = ctrl.panel.table_editor_option_nodes[i];
+                let target_option = ctrl.panel.table_editor_option_nodes[i + 1];
+                source += ((source_option.includes("src") || source_option.includes("dst")) ?
+                  (source_option.includes("src") ? " (src)" : " (dst)") :
+                  "");
+                target += ((target_option.includes("src") || target_option.includes("dst")) ?
+                  (target_option.includes("src") ? " (src)" : " (dst)") :
+                  "");
+
+                // add to sankeyData array
+                sankeyData.push({
+                  "source": source,
+                  "target": target,
+                  "value": value,
+                  //"label":"flow-"+index});
+                  "label": ctrl.sankeynetsage_holder_id + "_flow-" + index
+                });
+              }
+            });
+          }
         }
-/// FIXME: remove this sample data
-/*
-var sankeyData = [
-  {"source":"Barry","target":"Alice","value":"1","label":"link1"},
-  {"source":"Barry","target":"Alice","value":"1","label":"link1"},
-  {"source":"Barry","target":"Elvis","value":"1","label":"link2"},
-  {"source":"Barry","target":"Elvis","value":"1","label":"link3"},
-  {"source":"Frodo","target":"Elvis","value":"1","label":"link4"},
-  {"source":"Frodo","target":"Elvis","value":"1","label":"link5"},
-  {"source":"Frodo","target":"Sarah","value":"1","label":"link6"},
-  {"source":"Frodo","target":"Sarah","value":"1","label":"link6"},
-  {"source":"Elvis","target":"Sarah","value":"1","label":"link3"},
-  {"source":"Elvis","target":"Sarah","value":"1","label":"link4"},
-  {"source":"Elvis","target":"Alice","value":"1","label":"link2"},
-  {"source":"Elvis","target":"Alice","value":"1","label":"link5"},
-  {"source":"Sarah","target":"Alice","value":"1","label":"link3"},
-  {"source":"Sarah","target":"Alice","value":"1","label":"link4"},
-  {"source":"Sarah","target":"Alice","value":"1","label":"link6"},
-  {"source":"Sarah","target":"Alice","value":"1","label":"link6"},
-]
-*/
-/// FIXME: remove this
 
-
-
-
-
-
-
-  
-        // get sankey graph from data 
-          // FIXME: replace ddd with data pared
+        // get sankey graph from data
         var graph = createSankeyGraphFromData(sankeyData);
         //render sankey
         renderSankey(graph);
 
 
         // converts data into sankey node/link form
-        function createSankeyGraphFromData(data){
+        function createSankeyGraphFromData(data) {
           //set up graph in same style as original example but empty
-          var graph = {"nodes" : [], "links" : []};
+          var graph = {
+            "nodes": [],
+            "links": []
+          };
 
-            data.forEach(function (d) {
-              graph.nodes.push({ "name": d.source });
-              graph.nodes.push({ "name": d.target });
-              graph.links.push({ "source": d.source,
-                                 "target": d.target,
-                                 "value": +d.value,
-                                 "label": d.label});
-             });
+          data.forEach(function (d) {
+            graph.nodes.push({
+              "name": d.source
+            });
+            graph.nodes.push({
+              "name": d.target
+            });
+            graph.links.push({
+              "source": d.source,
+              "target": d.target,
+              "value": +d.value,
+              "label": d.label
+            });
+          });
 
-             // return only the distinct / unique nodes
-             graph.nodes = d3.keys(d3.nest()
-               .key(function (d) { return d.name; })
-               .map(graph.nodes));
+          // return only the distinct / unique nodes
+          graph.nodes = d3.keys(d3.nest()
+            .key(function (d) {
+              return d.name;
+            })
+            .map(graph.nodes));
 
-             // loop through each link replacing the text with its index from node
-             graph.links.forEach(function (d, i) {
-               graph.links[i].source = graph.nodes.indexOf(graph.links[i].source);
-               graph.links[i].target = graph.nodes.indexOf(graph.links[i].target);
-             });
+          // loop through each link replacing the text with its index from node
+          graph.links.forEach(function (d, i) {
+            graph.links[i].source = graph.nodes.indexOf(graph.links[i].source);
+            graph.links[i].target = graph.nodes.indexOf(graph.links[i].target);
+          });
 
-             //now loop through each nodes to make nodes an array of objects
-             // rather than an array of strings
-             graph.nodes.forEach(function (d, i) {
-               graph.nodes[i] = { "name": d };
-             });
+          //now loop through each nodes to make nodes an array of objects
+          // rather than an array of strings
+          graph.nodes.forEach(function (d, i) {
+            graph.nodes[i] = {
+              "name": d
+            };
+          });
 
           return graph;
         }
 
         // make sankey chart
-        function renderSankey(graph){
-          d3.select('#'+ctrl.containerDivId).selectAll('g').remove();
+        function renderSankey(graph) {
+          d3.select('#' + ctrl.containerDivId).selectAll('g').remove();
 
           var units = "Widgets";
 
@@ -425,31 +537,40 @@ var sankeyData = [
             offh = document.getElementById(ctrl.sankeynetsage_holder_id).offsetHeight;
           }
 
-          var margin = {top: 10, right: 10, bottom: 10, left: 10};
+          var margin = {
+            top: 10,
+            right: 10,
+            bottom: 10,
+            left: 10
+          };
           var width = offw - margin.left - margin.right;
           var height = offh - margin.top - margin.bottom;
 
-          var formatNumber = d3.format(",.0f");    // zero decimal places
+          var formatNumber = d3.format(",.0f"); // zero decimal places
           //var format = function(d) { return formatNumber(d) + " " + units; };
-          var format = function(d) { return ctrl.panel.to_Byte ? ctrl.formatBytes(d) : ctrl.formatBits(d); };
+          var format = function (d) {
+            return ctrl.panel.data_type === 'docs' ?
+              (ctrl.panel.docs_editor_to_Byte ? ctrl.formatBytes(d) : ctrl.formatBits(d)) :
+              d + ' ' + ctrl.panel.table_editor_link_width_label + ' (' + ctrl.panel.table_data_type + ')';
+          };
           var color = d3.scale.category20();
 
           // append the svg canvas to the page
-          var svg = d3.select('#sankey_svg_'+ctrl.panel.id);
-          if(svg.empty()){
-            svg = d3.select('#'+ctrl.containerDivId).append("svg")
-                                                .attr("width", "100%")
-                                                .attr("height", "100%")
-                                                .attr("id", "sankey_svg_"+ctrl.panel.id)
-                                                .attr("class", "sankey")
-                                                .append("g")
+          var svg = d3.select('#sankey_svg_' + ctrl.panel.id);
+          if (svg.empty()) {
+            svg = d3.select('#' + ctrl.containerDivId).append("svg")
+              .attr("width", "100%")
+              .attr("height", "100%")
+              .attr("id", "sankey_svg_" + ctrl.panel.id)
+              .attr("class", "sankey")
+              .append("g")
           }
 
           // Set the sankey diagram properties
           var sankey = d3.sankey()
-              .nodeWidth(36)
-              .nodePadding(40)
-              .size([width, height]);
+            .nodeWidth(36)
+            .nodePadding(40)
+            .size([width, height]);
 
           var path = sankey.link();
 
@@ -458,67 +579,137 @@ var sankeyData = [
             .links(graph.links)
             .layout(32);
 
+          // move nodes down to make space for labels
+          for (let i = 0; i < sankey.nodes().length; i++) {
+            if (sankey.nodes()[i].y < 25) {
+              sankey.nodes()[i].y = 25;
+            }
+          }
+          sankey.relayout();
+
+          // create node location object
+          var nodeLocations = {}
+          // store only unique x positions of the nodes
+          _.forEach(graph.nodes, function (n) {
+            if (!(n.x in nodeLocations)) {
+              nodeLocations[(n.x + n.dx / 2)] = 1;
+            }
+          });
+          // convert from string to Numbers
+          nodeLocations = Object.keys(nodeLocations).map(Number);
+          nodeLocations = nodeLocations.sort((a, b) => a - b);
+          // add first value to last node value
+          nodeLocations[nodeLocations.length - 1] += nodeLocations[0];
+          // set first value to 0
+          nodeLocations[0] = 0;
+
+          function auto_format_node_labels(nodeName) {
+            if (ctrl.panel.auto_format_labels) {
+              return nodeName.replace('meta.', '')
+                .replace('.keyword', '')
+                .replace(new RegExp('_', 'g'), ' ')
+                .replace(new RegExp('[.]', 'g'), ' ')
+                .replace('src', 'Source')
+                .replace('dst', 'Destination');
+            }
+            // other wise return same name
+            return nodeName;
+          }
+          // add node labels
+          var node_labels = svg.append("g").selectAll(".node-label")
+            .data(ctrl.panel.label_nodes)
+            .enter().append("text")
+            .attr("class", "node-label")
+            .attr("x", function (d) {
+              return nodeLocations[ctrl.panel.label_nodes.indexOf(d)]
+            })
+            .attr("y", (margin.top + 5))
+            .attr("text-anchor", function (d) {
+              switch (ctrl.panel.label_nodes.indexOf(d)) {
+                case 0:
+                  return "start";
+                case ctrl.panel.label_nodes.length - 1:
+                  return "end";
+                default:
+                  return "middle";
+              }
+            })
+            .text(function (d) {
+              return auto_format_node_labels(d)
+            });
+
           // add in the links
           var link = svg.append("g").selectAll(".link")
-              .data(graph.links)
+            .data(graph.links)
             .enter().append("path")
-            .attr("class", function(d) {return "link"+" "+d.label})
-              .attr("d", path)
-              .style("stroke-width", function(d) { return Math.max(1, d.dy); })
-              .sort(function(a, b) { return b.dy - a.dy; })
-            .on('mouseover', function(event){
-              _.forEach(document.getElementsByClassName(event.label), function(el) {
+            .attr("class", function (d) {
+              return "link" + " " + d.label
+            })
+            .attr("d", path)
+            .style("stroke-width", function (d) {
+              return Math.max(1, d.dy);
+            })
+            .sort(function (a, b) {
+              return b.dy - a.dy;
+            })
+            .on('mouseover', function (event) {
+              _.forEach(document.getElementsByClassName(event.label), function (el) {
                 el.classList.add("link-highlight");
               });
             })
-            .on('mouseout', function(event){
-              _.forEach(document.getElementsByClassName(event.label), function(el) {
+            .on('mouseout', function (event) {
+              _.forEach(document.getElementsByClassName(event.label), function (el) {
                 el.classList.remove("link-highlight");
               });
             });
 
           // add the link titles
           link.append("title")
-                .text(function(d) {
-                return d.source.name + " → " +
-                        d.target.name + "\n" + format(d.value); });
+            .text(function (d) {
+              return d.source.name + " → " +
+                d.target.name + "\n" + format(d.value);
+            });
 
           // add in the nodes
           var node = svg.append("g").selectAll(".node")
-              .data(graph.nodes)
+            .data(graph.nodes)
             .enter().append("g")
-              .attr("class", "node")
-              .attr("transform", function(d) {
-              return "translate(" + d.x + "," + d.y + ")"; })
+            .attr("class", "node")
+            .attr("transform", function (d) {
+              return "translate(" + d.x + "," + d.y + ")";
+            })
             .call(d3.behavior.drag()
-              .origin(function(d) { return d; })
-              .on("dragstart", function() {
-              this.parentNode.appendChild(this); })
+              .origin(function (d) {
+                return d;
+              })
+              .on("dragstart", function () {
+                this.parentNode.appendChild(this);
+              })
               .on("drag", dragmove))
-            .on('mouseover', function(event){
+            .on('mouseover', function (event) {
               let hl = [];
-              _.forEach(event.sourceLinks, function(sl){
+              _.forEach(event.sourceLinks, function (sl) {
                 hl.push(sl.label);
               });
-              _.forEach(event.targetLinks, function(tl){
+              _.forEach(event.targetLinks, function (tl) {
                 hl.push(tl.label);
               });
-              _.forEach(hl, function(flow){
-                _.forEach(document.getElementsByClassName(flow), function(el) {
+              _.forEach(hl, function (flow) {
+                _.forEach(document.getElementsByClassName(flow), function (el) {
                   el.classList.add("link-highlight");
                 });
               });
             })
-            .on('mouseout', function(event){
+            .on('mouseout', function (event) {
               let hl = [];
-              _.forEach(event.sourceLinks, function(sl){
+              _.forEach(event.sourceLinks, function (sl) {
                 hl.push(sl.label);
               });
-              _.forEach(event.targetLinks, function(tl){
+              _.forEach(event.targetLinks, function (tl) {
                 hl.push(tl.label);
               });
-              _.forEach(hl, function(flow){
-                _.forEach(document.getElementsByClassName(flow), function(el) {
+              _.forEach(hl, function (flow) {
+                _.forEach(document.getElementsByClassName(flow), function (el) {
                   el.classList.remove("link-highlight");
                 });
               });
@@ -526,80 +717,81 @@ var sankeyData = [
 
           // add the rectangles for the nodes
           node.append("rect")
-              .attr("height", function(d) { return d.dy; })
-              .attr("width", sankey.nodeWidth())
-              .style("fill", function(d) {
-              return d.color = color(d.name.replace(/ .*/, "")); })
-              .style("stroke", function(d) {
-              return d3.rgb(d.color).darker(2); })
+            .attr("height", function (d) {
+              return d.dy;
+            })
+            .attr("width", sankey.nodeWidth())
+            .attr("rx", 3)
+            .style("fill", function (d) {
+              d.color = "#cdcdcd"
+              if (d.targetLinks.length === 0) {
+                d.color = color(d.name.replace(/ .*/, ""));
+                let cl = [];
+                _.forEach(d.sourceLinks, function (sl) {
+                  cl.push(sl.label);
+                });
+                _.forEach(cl, function (flow) {
+                  _.forEach(document.getElementsByClassName(flow), function (el) {
+                    //el.style.cssText += "stroke:" + d.color + ";";
+                    console.log(d.color);
+
+                    if (ctrl.panel.monoChromaticSelected) {
+                      el.style.cssText += "stroke:" + ctrl.panel.monochromaticColor + ";";
+                    } else {
+                      el.style.cssText += "stroke:" + d.color + ";";
+                    }
+
+                  });
+                });
+              }
+              if (ctrl.panel.monoChromaticSelected) {
+                return ctrl.panel.monochromaticColor;
+              } else {
+                return d.color
+              }
+
+            })
+            .style("stroke", function (d) {
+              return d3.rgb(d.color).darker(2);
+            })
             .append("title")
-              .text(function(d) {
-              return d.name + "\n" + format(d.value); });
+            .text(function (d) {
+              return d.name + "\n" + format(d.value);
+            });
 
           // add in the title for the nodes
           node.append("text")
-              .attr("x", -6)
-              .attr("y", function(d) { return d.dy / 2; })
-              .attr("dy", ".35em")
-              .attr("text-anchor", "end")
-              .attr("transform", null)
-              .text(function(d) { return d.name; })
-            .filter(function(d) { return d.x < width / 2; })
-              .attr("x", 6 + sankey.nodeWidth())
-              .attr("text-anchor", "start");
+            .attr("x", -6)
+            .attr("y", function (d) {
+              return d.dy / 2;
+            })
+            .attr("dy", ".35em")
+            .attr("text-anchor", "end")
+            .attr("transform", null)
+            .text(function (d) {
+              return d.name;
+            })
+            .filter(function (d) {
+              return d.x < width / 2;
+            })
+            .attr("x", 6 + sankey.nodeWidth())
+            .attr("text-anchor", "start");
 
           // the function for moving the nodes
           function dragmove(d) {
             d3.select(this).attr("transform",
-                "translate(" + d.x + "," + (
-                        d.y = Math.max(0, Math.min(height - d.dy, d3.event.y))
-                    ) + ")");
+              "translate(" + d.x + "," + (
+                d.y = Math.max(0, Math.min(height - d.dy, d3.event.y))
+              ) + ")");
             sankey.relayout();
             link.attr("d", path);
           }
         }
 
-        /////////////////  YOUR CODE HERE //////////////
       }
     });
   }
-    
+
 }
 
 NetSageSankey.templateUrl = 'module.html';
-
-
-
-
-
-//////////////////////////////////////////////////////////////////////////
-/////////////////////////// TODO FIXME  //////////////////////////////////
-//////////////////////////////////////////////////////////////////////////
-  // 1) phase 1 parsing:
-  //       2 arrays -- 1.input data | 2.parsed data array 
-  //       for each input data
-  //           look in parsed array for matching flow (8 tupple?)
-  //               src_asn, src_ip, src_port, src_protocol,
-  //               dst_asn, dst_ip, dst_port, dst_protocol,
-  //          if match:
-  //            then aggregate on all values in json (total, max, min, average)
-  //            if average add another field for total flows aggregated
-  //
-  //
-  // 2) phase 2 parsing:
-  //       convert aggregated json's to the ddd sankey array of json
-  //          e.g. --->    [
-  //                         {"source":"Barry","target":"Alice","value":"1","label":"link1"},
-  //                         {"source":"Alice","target":"Elvis","value":"1","label":"link1"},
-  //                       ]
-  //       use user input data, and parsed array
-  //       for each parsed array item
-  //            for index 0 to index.length-1 in user sankey input, index++
-  //                  csv.push {"source":parsed[index], "target":parsed[index+1], "value":parsed[lineWidth_input], "label":"link"}
-  //                   
-  //    
-  //
-  //
-//////////////////////////////////////////////////////////////////////////
-/////////////////////////// TODO FIXME  //////////////////////////////////
-//////////////////////////////////////////////////////////////////////////
