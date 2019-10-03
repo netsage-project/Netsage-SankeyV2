@@ -388,6 +388,7 @@ export class NetSageSankey extends MetricsPanelCtrl {
 
 
   link(scope, elem, attrs, ctrl) {
+    var refreshed = false;
     var self = this;
     ctrl.events.on('render', function () {
       if (document.getElementById(ctrl.sankeynetsage_holder_id)) {
@@ -790,6 +791,11 @@ export class NetSageSankey extends MetricsPanelCtrl {
 
       }
     });
+    if (!refreshed) {
+      //ctrl.timeSrv.dashboard.startRefresh();
+      ctrl.panel.refresh();
+      refreshed = true;
+    }
   }
 
 }
