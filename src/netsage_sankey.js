@@ -422,7 +422,7 @@ export class NetSageSankey extends MetricsPanelCtrl {
 
         // get sankey graph from data
         var graph = ctrl.createSankeyGraphFromData(sankeyData);
-
+		
         //render sankey
         ctrl.renderSankey(graph);
     }
@@ -477,6 +477,11 @@ export class NetSageSankey extends MetricsPanelCtrl {
 
     // make sankey chart
     renderSankey(graph) {
+
+	if (graph.links.length == 0 || graph.nodes.length == 0){
+	    return;
+	}
+
         var ctrl = this;
         d3.select('#' + ctrl.containerDivId).selectAll('g').remove();
 
