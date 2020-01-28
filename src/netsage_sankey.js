@@ -639,14 +639,14 @@ export class NetSageSankey extends MetricsPanelCtrl {
             .attr("transform", function (d) {
                 return "translate(" + d.x + "," + d.y + ")";
             })
-            .call(d3.behavior.drag()
-                .origin(function (d) {
-                    return d;
-                })
-                .on("dragstart", function () {
-                    this.parentNode.appendChild(this);
-                })
-                .on("drag", dragmove))
+            //.call(d3.behavior.drag()
+              //  .origin(function (d) {
+                //    return d;
+                //})
+                //.on("dragstart", function () {
+                  //  this.parentNode.appendChild(this);
+                //})
+                //.on("drag", dragmove))
             .on('mouseover', function (event) {
                 let hl = [];
                 _.forEach(event.sourceLinks, function (sl) {
