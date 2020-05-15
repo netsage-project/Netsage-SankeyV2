@@ -1,33 +1,34 @@
 .node rect {
-	/* cursor: move;*/
-	fill-opacity: .9;
-	shape-rendering: crispEdges;
+  /*cursor: move;*/
+  fill-opacity: .9;
+  shape-rendering: crispEdges;
 }
 
-.node-label {
-	text-transform: capitalize;
-	pointer-events: none;
-	/*text-shadow: 0 1px 0 #fff;*/
-	font-size: 1.2em;
-	font-weight: bold;
-	fill: #303030;
+.node-label{
+  text-transform: capitalize;
+  pointer-events: none;
+  /*text-shadow: 0 1px 0 #fff;*/
+  font-size: 1.2em;
+  font-weight: bold;
+  fill: #303030;
 }
 .node text {
-	pointer-events: none;
-	text-shadow: 0 1px 0 #fff;
+  pointer-events: none;
+  text-shadow: 0 1px 0 #fff;
 }
 
 .link {
-	fill: none;
-	stroke: #000;
-	stroke-opacity: .4;
+  fill: none;
+  stroke: #000;
+  stroke-opacity: .4;
 }
-.link-highlight {
-	/*stroke-opacity: .8;*/
-	stroke-opacity: 1;
-	border-top: 2px solid black;
-	border-bottom: 2px solid black;
-	cursor: default;
-	/*stroke: #f8ae63;*/
-	/*stroke: #FF8000;*/
+.link-highlight{
+  /*stroke-opacity: .8;*/
+  stroke-opacity: 1;
+  border-top: 2px solid black;
+  border-bottom: 2px solid black;
+  cursor: default;
+  /*stroke: #f8ae63;*/
+  /*stroke: #FF8000;*/
 }
+
