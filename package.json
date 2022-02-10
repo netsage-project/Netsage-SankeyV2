@@ -1,6 +1,6 @@
 {
   "name": "netsage-sankey",
-  "version": "0.0.1",
+  "version": "1.4.0",
   "description": "NetSage Sankey Grafana Plugin",
   "main": "index.js",
   "scripts": {
